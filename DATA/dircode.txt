@@ -1,0 +1,32 @@
+
+				
+				printf("Opened: %d %s \n",  file_name_length, file_name);
+				
+				if ( ( stat(file_name, &file_info) >= 0 ) && ( (file_name[0] != '.') || (file_name[1] == '.') ) ) { //LOAD FILE PROPERTIES, and checks what exactly? I dunno
+					printf("NF");
+					if ( S_ISDIR(file_info.st_mode) ){ //IF FILE IS A DIRECTORY
+						if (IncludeDIRS) { AddItem(menu, strdup(file_name), "<DIR>"); } //ADD DIRECTORY TO MENU
+						//printf(" D");
+					} else {
+						if (file_name_length >= 4) { //IF FILENAME IS >= 4 (the minimum length for a . and 3 letter extention
+							printf("ext");
+							//GET THE LOCATION OF THE "." STARTING FROM file_name_length-1 GOING DOWN TO 0
+							for (temp = file_name_length - 1; temp > 0; temp-- ){
+								printf("(%d)", temp);
+								if (file_name[temp] == tempstr[0]){
+									ext_pos = temp;
+									temp = 0;//EXIT FOR
+								}
+							}
+							
+							printf(" (%d)F", ext_pos);
+							
+							for(int i = 0; wildcards[i] != NULL; i++) {//FOR EACH GIVEN WILDCARD
+								if(!strcasecmp((file_name + ext_pos), wildcards[i])) {//WILDCARD COMPARE WITH FILENAME?
+									AddItem(menu, strdup(file_name), ""); //ADD FILE TO MENU
+									i =32767;//force loop end
+									break;
+								}
+							}
+						} else {printf("Filenamelength < 4"); }
+					}
