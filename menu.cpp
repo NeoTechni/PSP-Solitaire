@@ -22,15 +22,25 @@ extern "C" {
 #define MAX_PATH 1024
 #define RGB(r, g, b) ((r)|((g)<<8)|((b)<<16)) 
 
+	//Store extention lists in arrays like this, it's easier, and let's the menu code use them as well
 	char *file_ext[] = { ".mp3",  NULL }; //Supported Extention Array ".m3u",
 
+	//DO NOT TOUCH
 	char * current_dir_name = "";
 	char * directory = "<DIR>";
+	char * root = ".";
 	char * isempty = "";
 	char * str;
-	const int MAX_MENU_COUNT = 99;
-	const int QUIT_MENU = -2;
 	const Color Transparent = 0x01010101;
+	const int MAX_MENU_COUNT = 99; //Artificially imposed limit.
+	
+	//Special menu option type values
+	//Any value >=0 implies it is a menu option with sub options. Uses a Zero indexed array in a | delimeted string
+	const int NOOPTIONS = -1;	//Used for an option with no sub options (just show the whole text for the side)
+	const int QUIT_MENU = -2;	//Used for an option that would end a loop (like an OK/Cancel button)
+	const int MENU_TEXT = -3;	//Used for an option that when selected, would call up the onscreen keyboard (unimplemented)
+	const int MENU_RANGE = -4;	//Used for an option who's suboptions would be a range of numbers, too long to have them all declared in a big string (unimplemented)
+	const int UNSELECTABLE = -5;
 	
 struct region{
 	Image* srchdc;
@@ -71,10 +81,14 @@ struct Menu{
 	int Whitespace;
 };
 
+bool NeedsRedraw = false;
 Image* Skin;
 region rChecked, rUnchecked, rUnselected, rSelected, background;
 Color cSelected , cFont = 0x0, cFontSelected = 0x0;
-Menu Soundtrackmenu;
+Menu Soundtrackmenu, Submenu;
+
+//prototypes
+bool HandleRemote();
 
 //wtf does it think is wrong with this?
 int onScreen(Menu menu){
@@ -98,8 +112,8 @@ void setSelectedItem(Menu& menu, int Index) {
 	if (Index < 0) { Index = menu.MenuCount -1; }
 	if (Index >= menu.MenuCount) { Index = 0; Direction = -1; }
 	
-	//do not let you select a menuitem labelled "-" which will be drawn as "---------------------------"
-	while ( menu.MenuList[Index].Text == "-" ) {
+	//do not let you select a menuitem labelled "-", or set to UNSELECTABLE
+	while ( ( menu.MenuList[Index].Text == "-" ) || ( menu.MenuList[Index].Side == "-" ) || (menu.MenuList[Index].OptionCount == UNSELECTABLE) ){
 		Index = Index + Direction;
 		if (Index < 0) { Index = menu.MenuCount -1; }
 		if (Index >= menu.MenuCount) { Index = 0; }
@@ -119,7 +133,6 @@ void setSelectedItem(Menu& menu, int Index) {
 	menu.isclean == false;
 	menu.SelectedItem = Index;
 }
-
 bool menuControls(Menu& menu, SceCtrlData pad){
 //PSP_CTRL_SQUARE PSP_CTRL_SELECT PSP_CTRL_START PSP_CTRL_UP PSP_CTRL_RIGHT PSP_CTRL_DOWN 
 //PSP_CTRL_RTRIGGER PSP_CTRL_TRIANGLE PSP_CTRL_CIRCLE PSP_CTRL_CROSS PSP_CTRL_LEFT PSP_CTRL_LTRIGGER 
@@ -182,7 +195,9 @@ bool menuControls(Menu& menu, SceCtrlData pad){
 			}
 		}
 		
-		if ((!didsomething) && (pad.Buttons & PSP_CTRL_START)) { didsomething = true;}
+		//if ((!didsomething) && (pad.Buttons & PSP_CTRL_START)) { didsomething = true;}
+		
+		if (!didsomething) { HandleRemote(); }
 		
 		menu.isclean = !didsomething;
 	}
@@ -274,7 +289,7 @@ int AddItem(Menu& menu, char* Text, char* Side, int options = -1, bool Checked =
 	if (MAX_MENU_COUNT > menu.MenuCount) {
 		menu.MenuCount = menu.MenuCount + 1;
 		menu.MenuList = (MenuItem*) realloc( menu.MenuList , sizeof(MenuItem) * menu.MenuCount); //REDIM PRESERVE
-		SetItem (menu, menu.MenuCount - 1, Text, Side, options);
+		SetItem (menu, menu.MenuCount - 1, Text, Side, options, Checked);
 		return menu.MenuCount - 1;
 	} else {
 		return -1;
@@ -329,11 +344,13 @@ void DrawMenuItem(Menu menu, int Index, int X, int Y){
 		//}
 	} else {
 	
-	//Skin or selected color (hideslected)	
-	if (Selected) {
-		DrawRegion( rSelected, X, Y , menu.Column2, -1,0,0, fillcolor);
-	} else {
-		if ( menu.useskin ) { DrawRegion( rUnselected, X, Y , menu.Column2); }
+	//Skin or selected color (hideslected)
+	if ( (menu.MenuList[Index].Side != "-") && (menu.MenuList[Index].OptionCount != UNSELECTABLE) ) {
+		if (Selected) {
+			DrawRegion( rSelected, X, Y , menu.Column2, -1,0,0, fillcolor);
+		} else {
+			if ( menu.useskin ) { DrawRegion( rUnselected, X, Y , menu.Column2); }
+		}
 	}
 		
 	//Checkboxes
@@ -360,19 +377,23 @@ void DrawMenuItem(Menu menu, int Index, int X, int Y){
 	
 	
 	//Overdraw
-	if (Selected) {
-		DrawRegion ( rSelected, oX + menu.Column2, Y , rSelected.Width- menu.Column2, -1,menu.Column2,0, fillcolor);
-	} else {
-		DrawRegion(rUnselected, oX + menu.Column2, Y , rUnselected.Width- menu.Column2, -1,menu.Column2,0, fillcolor);
+	if ( (menu.MenuList[Index].Side != "-") && (menu.MenuList[Index].OptionCount != UNSELECTABLE)) {
+		if (Selected) {
+			DrawRegion ( rSelected, oX + menu.Column2, Y , rSelected.Width- menu.Column2, -1,menu.Column2,0, fillcolor);
+		} else {
+			DrawRegion(rUnselected, oX + menu.Column2, Y , rUnselected.Width- menu.Column2, -1,menu.Column2,0, fillcolor);
+		}
 	}
 	
 	//Right side Text
 	if (!menu.hideside) {
-		X = oX + menu.Column2;
-		if (menu.MenuList[Index].OptionCount > -1){
-			printTextScreen (X + menu.Whitespace, Y + menu.Whitespace, GetOption(menu.MenuList[Index].Side, menu.MenuList[Index].OptionIndex), color);
-		} else {
-			printTextScreen (X + menu.Whitespace, Y + menu.Whitespace, menu.MenuList[Index].Side, color);
+		if (menu.MenuList[Index].Side != isempty) {
+			X = oX + menu.Column2;
+			if (menu.MenuList[Index].OptionCount > -1){
+				printTextScreen (X + menu.Whitespace, Y + menu.Whitespace, GetOption(menu.MenuList[Index].Side, menu.MenuList[Index].OptionIndex), color);
+			} else {
+				printTextScreen (X + menu.Whitespace, Y + menu.Whitespace, menu.MenuList[Index].Side, color);
+			}
 		}
 	}
 	
@@ -393,10 +414,12 @@ void DrawMenu(Menu menu){
 }
 
 int Askmenu(Menu& menu, SceCtrlData& pad){
+	//clearScreen(0);
 	bool Con = true;
 	menu.isclean = false;
 	DrawMenu(menu);
 	flipScreen();
+	//clearScreen(0);
 	menu.isclean = false;
 	
 	if ( menu.MenuCount > 0 ) {
@@ -437,6 +460,38 @@ int Askmenu(Menu& menu, SceCtrlData& pad){
 char* CurrentWorkingDirectory(){//int chdir(const char * dirname);
 	getcwd(current_dir_name, MAX_PATH); //get current working directory, put it in current_dir_name, buffer length of MAX_PATH
 	return current_dir_name;
+}
+
+bool MoveItemUp(Menu& menu, int Item){
+	MenuItem temp;
+	int temp2;
+	bool Switch = false;
+	
+	if (Item > 0) {
+		temp2 = strcmp(menu.MenuList[Item].Side, menu.MenuList[Item-1].Side);
+		if ( temp2 == -1){		//is the extention supposed to be higher on the list?
+			Switch = true;
+		} else { 				//if the extentions match, check if the filename is supposed to be higher on the list
+			if (temp2 == 0) {
+				Switch = (strcmp(menu.MenuList[Item].Text, menu.MenuList[Item-1].Text) == -1);	
+			}
+		}
+	}
+	
+	if (Switch) {
+		//temp = menu.MenuList[Item-1];
+		//menu.MenuList[Item-1] = menu.MenuList[Item];
+		//menu.MenuList[Item] = temp;
+		return true;
+	} else {
+		return false;
+	}
+}
+
+void Sortitem(Menu& menu, int Item){
+	while (MoveItemUp(menu, Item)) {
+		Item = Item - 1;
+	}
 }
 
 //The code below is modified from Exophase's gpSP GBA emulator.
@@ -506,13 +561,18 @@ void menuFileList(Menu& menu, char* current_dir_name , char **wildcards, bool In
 					}
 				}
 				
-				if (doadd) {AddItem(menu, strdup(file_name), side, QUIT_MENU, check); } //ADD FILE TO MENU 
+				if (doadd) { 
+					AddItem(menu, strdup(file_name), side, QUIT_MENU, check); 
+					//Sortitem(menu, menu.MenuCount-1);
+				} //ADD FILE TO MENU  Sortitem(menu,
 				//}
 			}
 			//printf("NEXT");	
 		} while(current_file);
 		//printf("\nCLOSING ");
 		closedir(current_dir);//CLOSE THE DIRECTORY
+		//SORT
+		//END SORT
 		//printf("SUCCESS");
 	}
 	//printf(" ENDFUNCTION");
@@ -530,6 +590,7 @@ bool PlayItem(int Index){
 			LoadMP3(test);
 			Play();
 			retval = true;
+			NeedsRedraw = true;
 		}
 	}
 	return retval;
@@ -592,7 +653,7 @@ void PrevTrack(){
 }
 
 //	PSP_HPRM_PLAYPAUSE, PSP_HPRM_FORWARD, PSP_HPRM_BACK, PSP_HPRM_VOL_UP, PSP_HPRM_VOL_DOWN, PSP_HPRM_HOLD
-void HandleRemote(){
+bool HandleRemote(){
 	u32 pad = 0;
 	bool didsomething = false;
 	
@@ -626,8 +687,9 @@ void HandleRemote(){
 	}
 	
 	}
+	
+	return didsomething;
 }
-
 
 //PSP_CTRL_SQUARE PSP_CTRL_SELECT PSP_CTRL_START PSP_CTRL_UP PSP_CTRL_RIGHT PSP_CTRL_DOWN 
 //PSP_CTRL_RTRIGGER PSP_CTRL_TRIANGLE PSP_CTRL_CIRCLE PSP_CTRL_CROSS PSP_CTRL_LEFT PSP_CTRL_LTRIGGER 
@@ -687,20 +749,39 @@ void AskForFile(SceCtrlData& pad){
 			}
 		}
 		
+		//DPAD:Left - Page Up
+		if ((!didsomething) && (pad.Buttons & PSP_CTRL_LEFT)) { didsomething = true;
+			setSelectedItem(Soundtrackmenu, Soundtrackmenu.SelectedItem - onScreen(Soundtrackmenu));
+			isclean=false;
+		}
+
+		//DPAD:Right - Page down
+		if ((!didsomething) && (pad.Buttons & PSP_CTRL_RIGHT)) { didsomething = true;
+			setSelectedItem(Soundtrackmenu, Soundtrackmenu.SelectedItem + onScreen(Soundtrackmenu));
+			isclean=false;
+		}
+
+		//R trigger - Next Track
 		if ((!didsomething) && (pad.Buttons & PSP_CTRL_RTRIGGER)) { didsomething = true;
 			NextTrack();
 			isclean=false;
 		}
 		
+		//L trigger - Prev track
 		if ((!didsomething) && (pad.Buttons & PSP_CTRL_LTRIGGER)) { didsomething = true;
 			PrevTrack();
 			isclean=false;
 		}
 		
+		//X - Play file, browse directory/playlist
 		if ((!didsomething) && (pad.Buttons & PSP_CTRL_CROSS)) { didsomething = true;
 			if (Soundtrackmenu.MenuCount > 0 && Soundtrackmenu.SelectedItem > -1 && Soundtrackmenu.SelectedItem < Soundtrackmenu.MenuCount) {
 				if (Soundtrackmenu.MenuList[ Soundtrackmenu.SelectedItem ].Side == directory) {
-					chdir(Soundtrackmenu.MenuList[Soundtrackmenu.SelectedItem].Text);
+					if (strcmp(root, Soundtrackmenu.MenuList[Soundtrackmenu.SelectedItem].Text) == 0) {//fix root ignore problem
+						chdir("ms0:/");
+					} else {
+						chdir(Soundtrackmenu.MenuList[Soundtrackmenu.SelectedItem].Text);
+					}
 					CurrentWorkingDirectory();
 					ClearItems( Soundtrackmenu ) ;
 					menuFileList(Soundtrackmenu, current_dir_name, file_ext);
@@ -724,15 +805,28 @@ void AskForFile(SceCtrlData& pad){
 			isclean=false;
 		}
 		
+		//Select - Quit
 		if ((!didsomething) && (pad.Buttons & PSP_CTRL_SELECT)) { didsomething = true;
 			Soundtrackmenu.SelectedItem = 0;
 			Con = false;
 		}
 		
+		//Start - Play/Pause
 		if ((!didsomething) && (pad.Buttons & PSP_CTRL_START)) { didsomething = true;
 			Pause();
 		}
 		
+		if ((!didsomething) && (pad.Buttons & PSP_CTRL_TRIANGLE)) { didsomething = true;
+			DrawRegion(background);
+			flipScreen();
+			DrawRegion(background);
+			Askmenu(Submenu, pad);
+			RANDOM = Submenu.MenuList[0].OptionIndex == 1;
+			Soundtrackmenu.isclean = false;
+			isclean = false;
+		}
+		
+		//Pass all other button presses to the menu handler (basically what at this point? Square, circle and triangle?
 		if (!didsomething) {
 			if (menuControls(Soundtrackmenu, pad)) {// (!menu.isclean){
 				DrawMenu(Soundtrackmenu);
@@ -746,12 +840,14 @@ void AskForFile(SceCtrlData& pad){
 			}
 		}
 		
-		if (!isclean) {
+		//Drawscreen
+		if (!isclean||NeedsRedraw) {
 			isclean = true;
 			DrawRegion(background);
 			flipScreen();
 			DrawRegion(background);
 			DrawMenu(Soundtrackmenu);
+			NeedsRedraw=false;
 			
 			if (LOADED) {
 				if ( FILETITLEREAL ) { printTextScreen (240 - strlen(FILETITLEREAL) * 4 , 6, FILETITLEREAL, 0xFFFFFFFF); }
@@ -761,6 +857,7 @@ void AskForFile(SceCtrlData& pad){
 			flipScreen();
 		}
 		
+		//Delay and check for remote control keypresses
 		if (didsomething) {
 			doEvents();
 			doEvents();
@@ -769,4 +866,24 @@ void AskForFile(SceCtrlData& pad){
 		
 		}
 	}
+}
+
+void SetupSubMenu(){
+	AddItem(Submenu, "Playmode",     					"Sequential|Random", 1); //0
+	AddItem(Submenu, "-",     	  												isempty);//1
+	AddItem(Submenu, "Done",   											isempty,	QUIT_MENU);//2
+	AddItem(Submenu, "-",     	  													isempty);//3
+	AddItem(Submenu, "L Trigger",						"Prev Track", 				UNSELECTABLE);//4
+	AddItem(Submenu, "R Trigger",						"Next Track", 				UNSELECTABLE);//5
+	AddItem(Submenu, "Start",							"Pause/Play", 				UNSELECTABLE);//6
+	AddItem(Submenu, "Square",							"Queue/Unqueue",			UNSELECTABLE);//7
+	AddItem(Submenu, "Cross",							"Play Selected",			UNSELECTABLE);//8
+	AddItem(Submenu, "Left",							"Page Up",					UNSELECTABLE);//9
+	AddItem(Submenu, "Right",							"Page Down",				UNSELECTABLE);//10
+	AddItem(Submenu, "-",     	  													isempty);//11
+	AddItem(Submenu, "Instead of pressing select to open this menu",    isempty,	UNSELECTABLE);//12
+	AddItem(Submenu, "you can hold select and press a button",          isempty,	UNSELECTABLE);//13
+	AddItem(Submenu, "(L or R trigger, or start) and this menu", 	    isempty,	UNSELECTABLE);//14
+	AddItem(Submenu, "will be skipped. The remote works too.", 		    isempty,	UNSELECTABLE);//15
+	AddItem(Submenu, "Thank you for playing my game :)", 		  	    isempty,	UNSELECTABLE);//16
 }

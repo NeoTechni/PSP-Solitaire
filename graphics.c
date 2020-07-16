@@ -24,6 +24,34 @@ unsigned int __attribute__((aligned(16))) list[262144];
 static int dispBufferNumber;
 static int initialized = 0;
 
+
+/*
+Image* grabScreen(int x1, int y1, int x2, int y2) { 
+
+  int posX; 
+  int posY; 
+  Color pixel; 
+  Color* vram = getVramDisplayBuffer(); 
+  Image* screenShot; 
+
+  screenShot = createImage(x2-x1,y2-y1); 
+  for (posY=y1; posY<y2; posY++) { 
+     for(posX=x1; posX<x2; posX++) { 
+        pixel = vram[PSP_LINE_SIZE * posY + posX]; 
+        putPixelImage(pixel,posX,posY,screenShot); 
+     } 
+  } 
+  return screenShot; 
+} 
+
+void saveScreen(char* filename) { 
+  Image* screenShot; 
+  screenShot = grabScreen(0,0,480,272); 
+  saveImage(filename,screenShot->data,480,272,PSP_LINE_SIZE,0); 
+  freeImage(screenShot); 
+}
+*/
+
 static int getNextPower2(int width)
 {
 	int b = width;
@@ -491,4 +519,8 @@ void disableGraphics()
 void guStart()
 {
 	sceGuStart(GU_DIRECT, list);
+}
+
+void TakeScreenshot(char * Filename){
+	saveImage(Filename, getVramDisplayBuffer(), SCREEN_WIDTH, SCREEN_HEIGHT, PSP_LINE_SIZE, 0);
 }

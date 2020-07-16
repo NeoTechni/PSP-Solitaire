@@ -92,7 +92,10 @@ void setupdefaultskin(){
 		setupmenu(Mainmenu, 		57,  0, 272, 300, 13, false, true, false, false, 2);
 		setupmenu(Losemenu, 		57,  0, 272, 300, 13, false, true, false, false, 2);
 		setupmenu(Winmenu,  		57,  0, 272, 300, 13, false, true, false, false, 2);
+		
 		setupmenu(Soundtrackmenu,  	58, 24, 226, 330, 13, false, true, false, true, 2);
+		setupmenu(Submenu, 			57, 24, 272, 250, 13, false, true, false, false, 2);
+		SetupSubMenu();
 	}
 	
 	AddItem(Mainmenu, "Draw",     "3|1", 1); //0
@@ -194,8 +197,10 @@ int findapile(int Value, int Suite){
 			if ( temp != BufferPile ) {
 				if (PileList[temp].CardList[PileList[temp].CardCount-1].Value == Value + 1) {
 					if ( GetColor(PileList[temp].CardList[PileList[temp].CardCount-1].Suite) != GetColor(Suite) ) {
-						retval = temp;
-						temp = 13;
+						if (PileList[temp].CardList[PileList[temp].CardCount-1].Face) {
+							retval = temp;
+							temp = 13;
+						}
 					}
 				}
 			}
@@ -753,6 +758,9 @@ void AutoControl() {
 }	
 
 int main() {
+	sceCtrlSetSamplingCycle(0); 
+	sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
+
 	char buffer[200];
 	tickRes = sceRtcGetTickResolution();	
 	InitAudio();

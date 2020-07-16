@@ -14,7 +14,26 @@ extern "C" {
 	#include "mp3player.h"
 }
 
-
+/*
+ red = color >> and 255
+ 
+ void  me_startproc(u32 func, u32 param) 
+ {             
+   me_sceKernelDcacheWritebackInvalidateAll();     
+    
+   memcpy((void *) 0xbfc00040, me_stub, (int) (me_stub_end - me_stub)); 
+        
+   _sw(func,  0xbfc00600); 
+   _sw(param, 0xbfc00604); 
+    
+   sceKernelDcacheWritebackAll(); 
+    
+   sceSysregMeResetEnable(); 
+   sceSysregMeBusClockEnable();       
+   sceSysregMeResetDisable(); 
+ } 
+ */
+ 
 void InitAudio(){
 	scePowerSetClockFrequency(333, 333, 166);
     pspAudioInit();

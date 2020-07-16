@@ -1,3 +1,4 @@
+cls
 erase main.o
 make
-eboot.pbp
+copy eboot.pbp I:\PSP\GAME150\Solitaire\eboot.pbp
